@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2
 
-$repository = 'https://github.com/ThisisPeggy/CMap-Extension-Hermes-Connector'
+$repository = 'https://github.com/ThisisPeggy/-Tale-Hermes-Connector'
 $pluginName = 'hermes-browser'
 $gatewayStopped = $false
 $revision = if ($env:HERMES_BROWSER_CONNECTOR_COMMIT) {
@@ -71,7 +71,7 @@ try {
     $pluginDir = Join-Path (Join-Path $hermesHome 'plugins') $pluginName
 
     if ((Test-Path -LiteralPath $pluginDir) -and (Test-GitCheckout $pluginDir)) {
-        Write-Host 'Updating CMap Extension Hermes Connector...'
+        Write-Host 'Updating Tale Hermes Connector...'
         Get-ChildItem -LiteralPath $pluginDir -Force -Recurse -File -ErrorAction SilentlyContinue |
             ForEach-Object { if ($_.IsReadOnly) { $_.IsReadOnly = $false } }
     } else {
@@ -79,7 +79,7 @@ try {
             Write-Host 'Repairing an incomplete Connector installation...'
             Move-BrokenConnector $pluginDir $hermesHome
         }
-        Write-Host 'Installing CMap Extension Hermes Connector...'
+        Write-Host 'Installing Tale Hermes Connector...'
         Invoke-Checked { hermes plugins install $repository --enable } 'Connector installation failed.'
     }
 
@@ -98,7 +98,7 @@ try {
     } else {
         Invoke-Checked { python3 (Join-Path $pluginDir 'connect.py') } 'Connector pairing failed.'
     }
-    Write-Host 'CMap Extension Hermes Connector is ready.' -ForegroundColor Green
+    Write-Host 'Tale Hermes Connector is ready.' -ForegroundColor Green
 } finally {
     if ($gatewayStopped) { & hermes gateway restart }
 }

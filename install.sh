@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-repository='https://github.com/ThisisPeggy/CMap-Extension-Hermes-Connector'
+repository='https://github.com/ThisisPeggy/-Tale-Hermes-Connector'
 plugin_name='hermes-browser'
 hermes_home="${HERMES_HOME:-$HOME/.hermes}"
 plugin_dir="$hermes_home/plugins/$plugin_name"
@@ -28,7 +28,7 @@ hermes gateway stop >/dev/null 2>&1 || true
 gateway_stopped=1
 
 if [ -d "$plugin_dir" ] && git -C "$plugin_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  echo 'Updating CMap Extension Hermes Connector...'
+  echo 'Updating Tale Hermes Connector...'
 else
   if [ -e "$plugin_dir" ]; then
     backup_root="$hermes_home/plugin-backups"
@@ -38,7 +38,7 @@ else
     mv "$plugin_dir" "$backup_path"
     echo "Moved the incomplete Connector to $backup_path"
   fi
-  echo 'Installing CMap Extension Hermes Connector...'
+  echo 'Installing Tale Hermes Connector...'
   hermes plugins install "$repository" --enable
 fi
 
@@ -57,4 +57,4 @@ else
   python "$plugin_dir/connect.py"
 fi
 
-echo 'CMap Extension Hermes Connector is ready.'
+echo 'Tale Hermes Connector is ready.'

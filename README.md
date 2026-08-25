@@ -1,6 +1,6 @@
-# CMap Extension Hermes Connector
+# Tale Hermes Connector
 
-Local Hermes platform connector for CMap Extension. Its Hermes
+Local Hermes platform connector for Tale. Its Hermes
 WebSocket remains loopback-only. When the user explicitly starts a phone
 transfer, a separate short-lived upload page is opened on the local network.
 
@@ -13,16 +13,16 @@ checkouts are updated without deleting the plugin directory.
 ### Windows (PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/ThisisPeggy/CMap-Extension-Hermes-Connector/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/ThisisPeggy/-Tale-Hermes-Connector/main/install.ps1 | iex
 ```
 
 ### macOS and Linux
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ThisisPeggy/CMap-Extension-Hermes-Connector/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ThisisPeggy/-Tale-Hermes-Connector/main/install.sh | sh
 ```
 
-The Browser extension generates the pairing token. Paste it into the hidden
+Tale generates the pairing token. Paste it into the hidden
 prompt when the installer asks. To pair manually, use the actual Hermes data
 directory for your platform:
 
@@ -36,14 +36,14 @@ public port or Hermes API key is needed.
 
 ## Send files from a phone
 
-Choose **From phone** in the extension and scan the QR code while the phone and
+Choose **From phone** in Tale and scan the QR code while the phone and
 computer are on the same local network. The Connector opens a separate LAN
 listener on port `8766` only while a transfer is active. Each channel has a
 random bearer token, accepts the supported attachment formats only, and expires
 after five minutes. The token is placed in the QR URL fragment, removed from the
 phone address bar after loading, and never appears in HTTP request logs.
 
-Phone files are validated and streamed only to the authenticated extension
+Phone files are validated and streamed only to the authenticated Tale
 WebSocket that created the transfer. They are staged in the open composer and
 are never sent automatically. Set `HERMES_BROWSER_MOBILE_PORT` to change the
 temporary port or `HERMES_BROWSER_MOBILE_HOST` to override the advertised LAN

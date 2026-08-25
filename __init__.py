@@ -1,6 +1,5 @@
-"""CMap Extension local connector."""
+"""Tale local connector."""
 
 from .adapter import register
 
 __all__ = ["register"]
-
