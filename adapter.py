@@ -1,8 +1,9 @@
-"""Loopback WebSocket platform adapter for Tale."""
+"""Loopback WebSocket platform adapter for Unfold."""
 
 import asyncio
 import base64
 import binascii
+import ipaddress
 import json
 import logging
 import os
@@ -10,6 +11,8 @@ import re
 import tempfile
 import uuid
 from datetime import datetime
+from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 from aiohttp import web, WSMsgType
 from gateway.config import Platform
@@ -18,10 +21,12 @@ from gateway.platforms.base import BasePlatformAdapter, MessageEvent, MessageTyp
 from .attachments import AttachmentStore
 from .mobile_transfer import MobileTransferService
 from .protocol import authenticated_subprotocol
+from .skills import install_github_skill, list_skills
 
 logger = logging.getLogger(__name__)
 MAX_VOICE_AUDIO_BYTES = 15 * 1024 * 1024
 MAX_SESSION_LIST_LIMIT = 500
+MAX_DELIVERED_IMAGE_BYTES = 15 * 1024 * 1024
 VOICE_AUDIO_SUFFIXES = {
     "audio/webm": ".webm", "audio/ogg": ".ogg", "audio/mp4": ".m4a",
     "audio/wav": ".wav", "audio/mpeg": ".mp3",
@@ -42,11 +47,11 @@ class BrowserAdapter(BasePlatformAdapter):
 
     @property
     def name(self):
-        return "Tale"
+        return "Unfold"
 
     async def connect(self, *, is_reconnect=False):
         if not self.token:
-            self._set_fatal_error("config_missing", "Run the Tale pairing command.", retryable=False)
+            self._set_fatal_error("config_missing", "Run the Unfold pairing command.", retryable=False)
             return False
         app = web.Application()
         app.router.add_get("/ws", self._websocket)
@@ -54,7 +59,7 @@ class BrowserAdapter(BasePlatformAdapter):
         await self.runner.setup()
         await web.TCPSite(self.runner, "127.0.0.1", self.port).start()
         self._mark_connected()
-        logger.info("Tale Hermes Connector listening on 127.0.0.1:%s", self.port)
+        logger.info("Unfold Hermes Connector listening on 127.0.0.1:%s", self.port)
         return True
 
     async def disconnect(self):
@@ -82,7 +87,7 @@ class BrowserAdapter(BasePlatformAdapter):
         await _event(ws, "gateway.ready", payload={
             "protocol": 1,
             "connector": "hermes-browser",
-            "version": "0.5.0",
+            "version": "0.6.0",
             "capabilities": {
                 "prompt_submit": True,
                 "session_create": True,
@@ -95,6 +100,9 @@ class BrowserAdapter(BasePlatformAdapter):
                 "image_attach_bytes": True,
                 "file_attach": True,
                 "mobile_transfer": True,
+                "skills_list": True,
+                "skills_install": True,
+                "image_artifacts": True,
                 "model_options": False,
             },
         })
@@ -145,7 +153,7 @@ class BrowserAdapter(BasePlatformAdapter):
             try:
                 messages = await asyncio.to_thread(self._session_history, session_id)
             except LookupError:
-                await _error(ws, request_id, -32004, "Tale session not found")
+                await _error(ws, request_id, -32004, "Unfold session not found")
             except Exception as exc:
                 logger.warning("Browser session history failed: %s", exc)
                 await _error(ws, request_id, -32005, "Hermes session history failed")
@@ -162,7 +170,7 @@ class BrowserAdapter(BasePlatformAdapter):
                 deleted = await asyncio.to_thread(self._delete_all_sessions)
             except Exception as exc:
                 logger.warning("Browser session deletion failed: %s", exc)
-                await _error(ws, request_id, -32007, "Tale session deletion failed")
+                await _error(ws, request_id, -32007, "Unfold session deletion failed")
             else:
                 await _result(ws, request_id, {"deleted": deleted, "source": "hermes_browser"})
         elif method == "image.attach_bytes":
@@ -196,6 +204,28 @@ class BrowserAdapter(BasePlatformAdapter):
         elif method == "mobile_transfer.cancel":
             result = await self.mobile_transfers.cancel(ws, str(params.get("transfer_id") or ""))
             await _result(ws, request_id, result)
+        elif method == "skills.list":
+            try:
+                result = await asyncio.to_thread(list_skills)
+            except Exception as exc:
+                logger.warning("Browser skill list failed: %s", exc)
+                await _error(ws, request_id, -32011, "Hermes skill list failed")
+            else:
+                await _result(ws, request_id, result)
+        elif method == "skills.install":
+            try:
+                result = await asyncio.to_thread(
+                    install_github_skill,
+                    params.get("url"),
+                    confirm=params.get("confirm") is True,
+                )
+            except ValueError as exc:
+                await _error(ws, request_id, -32602, str(exc))
+            except Exception as exc:
+                logger.warning("Browser skill install failed: %s", exc)
+                await _error(ws, request_id, -32012, "Hermes skill installation failed")
+            else:
+                await _result(ws, request_id, result)
         elif method == "prompt.submit":
             session_id = str(params.get("session_id") or "").strip()
             text = str(params.get("text") or "").strip()
@@ -363,7 +393,7 @@ class BrowserAdapter(BasePlatformAdapter):
         completion = asyncio.get_running_loop().create_future()
         self.pending[session_id] = {"ws": ws, "completion": completion, "content": ""}
         await _event(ws, "message.start", session_id)
-        source = self.build_source(chat_id=session_id, chat_name="Tale", chat_type="dm", user_id="browser", user_name="Browser user")
+        source = self.build_source(chat_id=session_id, chat_name="Unfold", chat_type="dm", user_id="browser", user_name="Browser user")
         attachments = params.get("_attachments") or []
         event = MessageEvent(
             text=text,
@@ -440,8 +470,50 @@ class BrowserAdapter(BasePlatformAdapter):
     async def send_typing(self, chat_id, metadata=None):
         return None
 
+    async def send_image(self, chat_id, image_url, caption=None, reply_to=None, metadata=None):
+        parsed = urlparse(str(image_url or ""))
+        if parsed.scheme == "https" and _public_image_host(parsed.hostname):
+            return await self._send_image_artifact(chat_id, url=image_url, caption=caption)
+        if parsed.scheme == "file":
+            return await self.send_image_file(chat_id, unquote(parsed.path), caption, reply_to, metadata)
+        return SendResult(success=False, error="Unsupported Browser image URL")
+
+    async def send_image_file(self, chat_id, image_path, caption=None, reply_to=None, metadata=None, **kwargs):
+        safe_path = self.validate_media_delivery_path(str(image_path or ""))
+        if not safe_path:
+            return SendResult(success=False, error="Unsafe Browser image path")
+        path = Path(safe_path)
+        try:
+            if path.stat().st_size > MAX_DELIVERED_IMAGE_BYTES:
+                return SendResult(success=False, error="Browser image exceeds 15 MB")
+            payload = await asyncio.to_thread(path.read_bytes)
+            from .attachments import _sniff_image
+            _, mime_type = _sniff_image(payload)
+            data_url = f"data:{mime_type};base64,{base64.b64encode(payload).decode('ascii')}"
+        except (OSError, ValueError) as exc:
+            return SendResult(success=False, error=str(exc))
+        return await self._send_image_artifact(
+            chat_id,
+            data_url=data_url,
+            name=path.name,
+            mime_type=mime_type,
+            caption=caption,
+        )
+
+    async def _send_image_artifact(self, chat_id, **payload):
+        pending = self.pending.get(str(chat_id))
+        if not pending:
+            return SendResult(success=False, error="No Browser turn is waiting")
+        await _event(
+            pending["ws"],
+            "artifact.image",
+            str(chat_id),
+            {"id": str(uuid.uuid4()), **{key: value for key, value in payload.items() if value}},
+        )
+        return SendResult(success=True)
+
     async def get_chat_info(self, chat_id):
-        return {"name": "Tale", "type": "dm", "chat_id": str(chat_id)}
+        return {"name": "Unfold", "type": "dm", "chat_id": str(chat_id)}
 
 
 async def _result(ws, request_id, result):
@@ -456,6 +528,16 @@ async def _event(ws, kind, session_id="", payload=None):
     await ws.send_json({"jsonrpc": "2.0", "method": "event", "params": {"type": kind, "session_id": session_id, "payload": payload or {}}})
 
 
+def _public_image_host(hostname):
+    host = str(hostname or "").strip().lower()
+    if not host or host == "localhost" or host.endswith(".localhost"):
+        return False
+    try:
+        return ipaddress.ip_address(host).is_global
+    except ValueError:
+        return True
+
+
 def _enabled():
     return bool(os.getenv("HERMES_BROWSER_CONNECTOR_TOKEN", "").strip())
 
@@ -463,7 +545,7 @@ def _enabled():
 def register(ctx):
     ctx.register_platform(
         name="hermes_browser",
-        label="Tale",
+        label="Unfold",
         adapter_factory=lambda cfg: BrowserAdapter(cfg),
         check_fn=_enabled,
         validate_config=lambda cfg: _enabled(),

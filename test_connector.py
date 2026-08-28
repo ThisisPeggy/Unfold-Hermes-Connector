@@ -42,6 +42,13 @@ class ConnectorTests(unittest.TestCase):
         self.assertEqual(authenticated_subprotocol(f"chat, {protocol}", token), protocol)
         self.assertEqual(authenticated_subprotocol("hermes-browser-token.wrong", token), "")
 
+    def test_remote_image_artifacts_reject_local_hosts(self):
+        module = _load_adapter()
+        self.assertTrue(module._public_image_host("cdn.example.com"))
+        self.assertFalse(module._public_image_host("localhost"))
+        self.assertFalse(module._public_image_host("127.0.0.1"))
+        self.assertFalse(module._public_image_host("192.168.1.20"))
+
     def test_env_file_is_replaced_without_leaking_permissions(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -73,6 +80,8 @@ class ConnectorTests(unittest.TestCase):
         self.assertNotIn("rev-parse --is-inside-work-tree *> $null", powershell)
         self.assertIn("plugin-backups", powershell)
         self.assertIn("plugin-backups", shell)
+        self.assertIn("ThisisPeggy/Unfold-Hermes-Connector", powershell)
+        self.assertIn("ThisisPeggy/Unfold-Hermes-Connector", shell)
         self.assertNotIn("--force }", powershell)
         self.assertNotIn('plugins install "$repository" --enable --force', shell)
 
@@ -182,6 +191,27 @@ class ConnectorAttachmentPromptTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(captured[0].media_urls, ["cached/image.png", "cached/quote.pdf"])
         self.assertEqual(captured[0].media_types, ["image/png", "application/pdf"])
+
+    async def test_generated_image_is_returned_as_a_browser_artifact(self):
+        module = _load_adapter()
+        adapter = module.BrowserAdapter.__new__(module.BrowserAdapter)
+        frames = []
+
+        class FakeWebSocket:
+            async def send_json(self, frame):
+                frames.append(frame)
+
+        adapter.pending = {"browser-session": {"ws": FakeWebSocket()}}
+        result = await adapter._send_image_artifact(
+            "browser-session",
+            data_url="data:image/png;base64,aGVsbG8=",
+            name="result.png",
+            mime_type="image/png",
+        )
+
+        self.assertTrue(result.success)
+        self.assertEqual(frames[0]["params"]["type"], "artifact.image")
+        self.assertEqual(frames[0]["params"]["payload"]["name"], "result.png")
 
 
 def _load_connect_module(name):

@@ -1,4 +1,4 @@
-"""Tale local connector."""
+"""Unfold local connector."""
 
 from .adapter import register
 

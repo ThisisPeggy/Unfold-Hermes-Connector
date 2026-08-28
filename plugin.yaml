@@ -1,8 +1,8 @@
 name: hermes-browser
-label: Tale
+label: Unfold
 kind: platform
-version: 0.5.0
-description: Authenticated Tale connector with optional ephemeral phone transfers.
+version: 0.6.0
+description: Authenticated Unfold connector with skills, media, and optional phone transfers.
 author: Peggy
 optional_env:
   - name: HERMES_BROWSER_CONNECTOR_TOKEN

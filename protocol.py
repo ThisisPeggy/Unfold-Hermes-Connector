@@ -10,7 +10,7 @@ def token_subprotocol(token):
     """Return the WebSocket subprotocol used to carry a loopback pairing token."""
     clean = str(token or "").strip()
     if len(clean) < 32 or any(ch.isspace() for ch in clean):
-        raise ValueError("Invalid Tale pairing token.")
+        raise ValueError("Invalid Unfold pairing token.")
     return f"{TOKEN_PROTOCOL_PREFIX}{clean}"
 
 
